@@ -29,7 +29,7 @@ git commit -m "Initial commit — ROSY - Chats"
 Then create a new repo at https://github.com/new and push:
 
 ```bash
-git remote add origin https://github.com/YOUR_USERNAME/rosy-chats.git
+git remote add origin https://github.com/rohitsingh25/rosychats.git
 git branch -M main
 git push -u origin main
 ```
@@ -50,7 +50,7 @@ Go to → https://render.com and sign up (use GitHub login for easy access).
 
 | Setting | Value |
 |---------|-------|
-| **Name** | `rosy-chats-backend` |
+| **Name** | `rosychats-backend` |
 | **Runtime** | `Python 3` |
 | **Build Command** | `pip install -r requirements.txt` |
 | **Start Command** | `daphne -b 0.0.0.0 -p $PORT chatroom.asgi:application` |
@@ -63,8 +63,8 @@ In the **Environment** tab, add:
 SECRET_KEY          = <generate a random 50-char string>
 DEBUG               = False
 DJANGO_SETTINGS_MODULE = chatroom.settings.production
-ALLOWED_HOSTS       = your-service-name.onrender.com
-CORS_ALLOWED_ORIGINS = https://your-frontend.vercel.app
+ALLOWED_HOSTS       = rosychats-backend.onrender.com
+CORS_ALLOWED_ORIGINS = https://rosychats.vercel.app
 ```
 
 > **Generate a secret key:**
@@ -74,7 +74,7 @@ CORS_ALLOWED_ORIGINS = https://your-frontend.vercel.app
 
 ### 1.5 Deploy
 Click **Create Web Service**. Render will build and start the server.  
-Your backend URL will be: `https://rosy-chats-backend.onrender.com`
+Your backend URL will be: `https://rosychats-backend.onrender.com`
 
 > ⚠️ **Free tier note**: Render's free instances spin down after 15 minutes of inactivity. The first WebSocket connection after sleep may take ~30 seconds. Upgrade to a paid tier ($7/mo) to keep it always on.
 
@@ -103,21 +103,21 @@ Go to → https://vercel.com and sign up (use GitHub login).
 In the **Environment Variables** section:
 
 ```
-VITE_API_BASE_URL   = https://rosy-chats-backend.onrender.com
-VITE_WS_BASE_URL    = wss://rosy-chats-backend.onrender.com
+VITE_API_BASE_URL   = https://rosychats-backend.onrender.com
+VITE_WS_BASE_URL    = wss://rosychats-backend.onrender.com
 ```
 
 > **Important**: Use `wss://` (secure WebSocket) since Render uses HTTPS by default.
 
 ### 2.5 Deploy
 Click **Deploy**. Vercel will build the app.  
-Your frontend URL will be: `https://rosy-chats.vercel.app`
+Your frontend URL will be: `https://rosychats.vercel.app`
 
 ### 2.6 Update Backend CORS
 Go back to Render → your backend service → **Environment** and update:
 ```
-CORS_ALLOWED_ORIGINS = https://rosy-chats.vercel.app
-ALLOWED_HOSTS        = rosy-chats-backend.onrender.com
+CORS_ALLOWED_ORIGINS = https://rosychats.vercel.app
+ALLOWED_HOSTS        = rosychats-backend.onrender.com
 ```
 Then click **Manual Deploy → Deploy latest commit** to restart.
 
@@ -131,14 +131,14 @@ However, you must ensure your Django `ALLOWED_HOSTS` and Channels `AllowedHostsO
 
 ```python
 # backend/chatroom/settings/production.py
-ALLOWED_HOSTS = ['rosy-chats-backend.onrender.com']
+ALLOWED_HOSTS = ['rosychats-backend.onrender.com']
 ```
 
 ---
 
 ## Step 4 — Test the Live App
 
-1. Open `https://rosy-chats.vercel.app` in two browser tabs
+1. Open `https://rosychats.vercel.app` in two browser tabs
 2. Create a room in Tab 1 → copy the code
 3. Join in Tab 2 → send messages
 4. Verify real-time updates work in both tabs ✅
