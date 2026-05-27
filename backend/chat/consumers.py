@@ -34,15 +34,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.group_name: str = f'chat_{self.room_code}'
         self.username: str | None = None
 
+        # IMPORTANT: In Django Channels, accept() MUST be called before close().
+        # Calling close() without accept() sends HTTP 403 (rejected upgrade)
+        # instead of a proper WebSocket close frame, causing the browser to
+        # see a failed connection rather than a clean rejection code.
+        await self.accept()
+
         if not validate_room_code(self.room_code):
+            await self._send({'type': 'error', 'message': 'Invalid room code.'})
             await self.close(code=4001)
             return
 
         if not await room_manager.room_exists(self.room_code):
+            await self._send({'type': 'error', 'message': 'Room not found or expired.'})
             await self.close(code=4004)
             return
 
-        await self.accept()
         await self._send({'type': 'connection_established', 'room_code': self.room_code})
 
     async def disconnect(self, close_code):
