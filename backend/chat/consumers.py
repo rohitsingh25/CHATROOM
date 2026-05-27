@@ -169,6 +169,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'content': msg.content,
             'timestamp': msg.timestamp,
             'message_type': 'text',
+            '_sender': self.channel_name,  # skip echoing back to sender
         })
 
     async def _handle_typing(self, data):
@@ -209,6 +210,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'file_type': file_type,
             'message_type': mtype,
             'timestamp': msg.timestamp,
+            '_sender': self.channel_name,  # skip echoing back to sender
         })
 
     # ------------------------------------------------------------------
@@ -216,10 +218,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
     # ------------------------------------------------------------------
 
     async def evt_chat(self, event):
-        await self._send({**event, 'type': 'chat'})
+        # Skip sending back to the original sender — they already see their
+        # own message via optimistic update on the frontend.
+        if event.get('_sender') != self.channel_name:
+            await self._send({**event, 'type': 'chat'})
 
     async def evt_file(self, event):
-        await self._send({**event, 'type': 'file'})
+        if event.get('_sender') != self.channel_name:
+            await self._send({**event, 'type': 'file'})
 
     async def evt_typing(self, event):
         if event.get('_sender') != self.channel_name:

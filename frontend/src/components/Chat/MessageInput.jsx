@@ -21,8 +21,18 @@ export default function MessageInput({ onSendChat, onSendTyping, onSendFile, roo
     const ta = textareaRef.current
     if (!ta) return
     ta.style.height = 'auto'
-    ta.style.height = Math.min(ta.scrollHeight, 150) + 'px'
+    ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'
   }, [text])
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    if (!showEmoji) return
+    const handler = (e) => {
+      if (!e.target.closest('[data-emoji-container]')) setShowEmoji(false)
+    }
+    setTimeout(() => document.addEventListener('click', handler), 0)
+    return () => document.removeEventListener('click', handler)
+  }, [showEmoji])
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -67,7 +77,7 @@ export default function MessageInput({ onSendChat, onSendTyping, onSendFile, roo
       form.append('room_code', roomCode)
       const { data } = await api.post('/api/upload/', form)
       onSendFile({ file_url: data.file_url, file_name: data.file_name, file_type: data.file_type })
-      toast.success('File uploaded!')
+      toast.success('File shared!')
     } catch (err) {
       toast.error(err.response?.data?.error || 'Upload failed.')
     } finally {
@@ -89,16 +99,12 @@ export default function MessageInput({ onSendChat, onSendTyping, onSendFile, roo
     maxSize: MAX_FILE_BYTES,
   })
 
-  const handleEmojiClick = (emojiData) => {
-    setText((t) => t + emojiData.emoji)
-    setShowEmoji(false)
-    textareaRef.current?.focus()
-  }
+  const canSend = text.trim().length > 0
 
   return (
     <div
       {...getRootProps()}
-      className={`relative border-t border-[var(--border)] bg-[rgba(10,10,15,0.9)] backdrop-blur-xl transition-colors duration-200 ${isDragActive || isDragging ? 'dropzone-active' : ''}`}
+      className={`relative flex-shrink-0 border-t border-[var(--border)] bg-[rgba(7,7,13,0.92)] backdrop-blur-xl safe-bottom transition-colors duration-200 ${isDragActive || isDragging ? 'dropzone-active' : ''}`}
     >
       <input {...getInputProps()} />
 
@@ -106,14 +112,12 @@ export default function MessageInput({ onSendChat, onSendTyping, onSendFile, roo
       <AnimatePresence>
         {(isDragActive || isDragging) && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="absolute inset-0 flex items-center justify-center bg-[rgba(108,99,255,0.1)] border-2 border-dashed border-[rgba(108,99,255,0.5)] z-20 rounded-t-xl"
           >
-            <div className="text-center">
+            <div className="text-center pointer-events-none">
               <div className="text-3xl mb-2">📎</div>
-              <p className="text-[var(--accent-2)] font-medium">Drop file to upload</p>
+              <p className="text-[var(--accent-2)] font-medium text-sm">Drop file to share</p>
             </div>
           </motion.div>
         )}
@@ -123,24 +127,30 @@ export default function MessageInput({ onSendChat, onSendTyping, onSendFile, roo
       <AnimatePresence>
         {showEmoji && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
+            data-emoji-container
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.97 }}
+            transition={{ duration: 0.15 }}
             className="absolute bottom-full right-2 mb-2 z-30"
           >
             <EmojiPicker
-              onEmojiClick={handleEmojiClick}
+              onEmojiClick={(e) => {
+                setText(t => t + e.emoji)
+                textareaRef.current?.focus()
+              }}
               theme="dark"
-              height={380}
-              width={320}
+              height={360}
+              width={300}
               searchPlaceholder="Search emoji…"
             />
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="flex items-end gap-2 px-3 py-3">
-        {/* Attach button */}
+      {/* Input bar */}
+      <div className="flex items-end gap-1.5 px-3 py-2.5">
+        {/* Attach */}
         <button
           id="btn-attach-file"
           onClick={openFilePicker}
@@ -150,12 +160,14 @@ export default function MessageInput({ onSendChat, onSendTyping, onSendFile, roo
         >
           {uploading
             ? <div className="w-4 h-4 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
-            : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
           }
         </button>
 
         {/* Textarea */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-w-0">
           <textarea
             id="chat-message-input"
             ref={textareaRef}
@@ -163,34 +175,37 @@ export default function MessageInput({ onSendChat, onSendTyping, onSendFile, roo
             value={text}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
-            className="input-glass w-full px-4 py-2.5 rounded-xl text-sm resize-none leading-relaxed"
-            style={{ minHeight: '42px', maxHeight: '150px' }}
+            placeholder="Type a message…"
+            className="input-glass w-full px-3.5 py-2.5 rounded-xl text-sm resize-none leading-relaxed block"
+            style={{ minHeight: '40px', maxHeight: '140px' }}
           />
         </div>
 
-        {/* Emoji button */}
+        {/* Emoji */}
         <button
           id="btn-emoji-picker"
-          onClick={() => setShowEmoji((v) => !v)}
+          data-emoji-container
+          onClick={() => setShowEmoji(v => !v)}
           title="Emoji"
-          className="flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-lg hover:bg-[rgba(108,99,255,0.1)] transition-all"
+          className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-base hover:bg-[rgba(108,99,255,0.1)] transition-all ${showEmoji ? 'bg-[rgba(108,99,255,0.15)]' : ''}`}
         >
           😊
         </button>
 
         {/* Send */}
-        <button
+        <motion.button
           id="btn-send-message"
           onClick={handleSend}
-          disabled={!text.trim()}
-          title="Send"
-          className="flex-shrink-0 w-9 h-9 rounded-xl btn-glow flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:transform-none"
+          disabled={!canSend}
+          title="Send (Enter)"
+          whileTap={{ scale: 0.92 }}
+          className="flex-shrink-0 w-9 h-9 rounded-xl btn-glow flex items-center justify-center disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:transform-none disabled:shadow-none"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'relative', zIndex: 1 }}>
-            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'relative', zIndex: 1 }}>
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
           </svg>
-        </button>
+        </motion.button>
       </div>
     </div>
   )
