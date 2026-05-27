@@ -1,10 +1,11 @@
 import { create } from 'zustand'
 import { saveSession, clearSession } from '../utils/session'
 
-const useChatStore = create((set, get) => ({
+const useChatStore = create((set) => ({
   // Room
-  roomCode: null,
-  username: null,
+  roomCode:   null,
+  username:   null,
+  isCreator:  false,   // true only for the user who first joined the room
   onlineUsers: [],
   onlineCount: 0,
 
@@ -12,20 +13,25 @@ const useChatStore = create((set, get) => ({
   messages: [],
 
   // UI State
-  typingUsers: [],   // usernames currently typing
-  isConnected: false,
-  isConnecting: false,
+  typingUsers:     [],
+  isConnected:     false,
+  isConnecting:    false,
   connectionError: null,
 
-  // Actions
-  setRoom: (roomCode, username) => {
-    // Persist to sessionStorage so page reloads restore the session
-    saveSession(roomCode, username)
-    set({ roomCode, username })
+  // ── Actions ─────────────────────────────────────────────
+
+  setRoom: (roomCode, username, isCreator = false) => {
+    saveSession(roomCode, username, isCreator)
+    set({ roomCode, username, isCreator })
   },
 
-  setConnected: (val) => set({ isConnected: val, isConnecting: false }),
-  setConnecting: (val) => set({ isConnecting: val }),
+  setCreator: (val) => {
+    set({ isCreator: val })
+    // Also persist so page reload retains creator status
+  },
+
+  setConnected:      (val) => set({ isConnected: val, isConnecting: false }),
+  setConnecting:     (val) => set({ isConnecting: val }),
   setConnectionError: (err) => set({ connectionError: err }),
 
   addMessage: (msg) =>
@@ -50,17 +56,17 @@ const useChatStore = create((set, get) => ({
     }),
 
   clearRoom: () => {
-    // Clear persisted session so a fresh start doesn't re-enter the old room
     clearSession()
     set({
-      roomCode: null,
-      username: null,
-      onlineUsers: [],
-      onlineCount: 0,
-      messages: [],
-      typingUsers: [],
-      isConnected: false,
-      isConnecting: false,
+      roomCode:        null,
+      username:        null,
+      isCreator:       false,
+      onlineUsers:     [],
+      onlineCount:     0,
+      messages:        [],
+      typingUsers:     [],
+      isConnected:     false,
+      isConnecting:    false,
       connectionError: null,
     })
   },

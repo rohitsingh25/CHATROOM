@@ -94,3 +94,10 @@ class HealthView(View):
     def get(self, request):
         count = async_to_sync(room_manager.active_room_count)()
         return JsonResponse({'status': 'ok', 'active_rooms': count})
+
+
+class ActiveRoomsView(View):
+    """Public endpoint — returns live active room count for the homepage badge."""
+    def get(self, request):
+        count = async_to_sync(room_manager.active_room_count)()
+        return JsonResponse({'active_rooms': count})

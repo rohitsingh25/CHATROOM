@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import useChatStore from '../store/chatStore'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -9,42 +9,41 @@ import ChatWindow from '../components/Chat/ChatWindow'
 import MessageInput from '../components/Chat/MessageInput'
 import RoomExpired from './RoomExpired'
 import NotFound from './NotFound'
-import { Toaster } from 'react-hot-toast'
+import { Toaster, toast } from 'react-hot-toast'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export default function ChatRoom() {
   const { code } = useParams()
-  const navigate = useNavigate()
+  const navigate  = useNavigate()
   const { username, isConnected, isConnecting, setRoom, clearRoom } = useChatStore()
 
-  // 'checking' | 'joining' | 'ready' | 'expired' | 'error'
+  // 'checking' | 'ready' | 'expired' | 'error'
   const [pageState, setPageState] = useState('checking')
 
+  // ── Session init ───────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
 
     async function init() {
-      // 1. If username already set in store (normal navigation), verify room exists
+      // 1. Username already in store (normal navigation) — just verify room exists
       if (username) {
         try {
           await api.post('/api/rooms/join/', { room_code: code })
           if (!cancelled) setPageState('ready')
         } catch (err) {
-          if (!cancelled) {
+          if (!cancelled)
             setPageState(err.response?.status === 404 ? 'expired' : 'error')
-          }
         }
         return
       }
 
-      // 2. Try to restore session from sessionStorage (page reload case)
+      // 2. Try restoring session from sessionStorage (page reload)
       const saved = loadSession()
       if (saved && saved.roomCode === code) {
-        // Verify the room still exists on the backend before restoring
         try {
           await api.post('/api/rooms/join/', { room_code: code })
           if (!cancelled) {
-            setRoom(code, saved.username)
+            setRoom(code, saved.username, saved.isCreator)
             setPageState('ready')
           }
         } catch (err) {
@@ -56,19 +55,30 @@ export default function ChatRoom() {
         return
       }
 
-      // 3. No session — redirect to Join page with code pre-filled
-      if (!cancelled) {
-        navigate(`/join?code=${code}`, { replace: true })
-      }
+      // 3. No session — send user to join page with code pre-filled
+      if (!cancelled) navigate(`/join?code=${code}`, { replace: true })
     }
 
     init()
     return () => { cancelled = true }
   }, [code]) // eslint-disable-line
 
-  const { sendChat, sendTyping, sendFile } = useWebSocket(
+  // ── Room-closed callback ───────────────────────────────────
+  const handleRoomClosed = useCallback(({ reason, creator }) => {
+    clearRoom()
+    if (reason === 'deleted_by_creator') {
+      toast(`Room deleted by ${creator}.`, { icon: '🚪', duration: 4000 })
+    } else {
+      toast('This room has expired.', { icon: '⏰', duration: 4000 })
+    }
+    navigate('/')
+  }, [clearRoom, navigate])
+
+  // ── WebSocket (only active when page is ready) ─────────────
+  const { sendChat, sendTyping, sendFile, sendDeleteRoom } = useWebSocket(
     pageState === 'ready' ? code : null,
-    username
+    username,
+    { onRoomClosed: handleRoomClosed }
   )
 
   const handleLeave = () => {
@@ -76,30 +86,24 @@ export default function ChatRoom() {
     navigate('/')
   }
 
-  // ── Dead-end screens ──
-  if (pageState === 'expired') {
-    return <RoomExpired roomCode={code} />
-  }
+  // ── Dead-end screens ───────────────────────────────────────
+  if (pageState === 'expired') return <RoomExpired roomCode={code} />
+  if (pageState === 'error')   return (
+    <NotFound
+      message="Something went wrong connecting to this room. Please try again."
+      showJoin
+    />
+  )
 
-  if (pageState === 'error') {
-    return (
-      <NotFound
-        message="Something went wrong connecting to this room. Please try again."
-        showJoin
-      />
-    )
-  }
-
-  // ── Loading / checking state ──
-  if (pageState === 'checking' || pageState === 'joining') {
+  // ── Loading screen ─────────────────────────────────────────
+  if (pageState === 'checking') {
     return (
       <div className="full-height relative flex items-center justify-center overflow-hidden">
-        <div className="orb orb-1" />
-        <div className="orb orb-2" />
+        <div className="orb orb-1" /><div className="orb orb-2" />
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="relative z-10 flex flex-col items-center gap-6"
+          className="relative z-10 flex flex-col items-center gap-5"
         >
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#6c63ff] to-[#9b87f5] flex items-center justify-center shadow-[0_0_40px_rgba(108,99,255,0.4)]">
             <div className="w-6 h-6 border-[2.5px] border-white border-t-transparent rounded-full animate-spin" />
@@ -113,21 +117,24 @@ export default function ChatRoom() {
     )
   }
 
-  // ── Main chat view ──
+  // ── Main chat view ─────────────────────────────────────────
   return (
     <div className="full-height flex flex-col bg-[var(--bg-primary)] overflow-hidden relative">
-      {/* Ambient background */}
       <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
         <div className="absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full bg-[rgba(108,99,255,0.055)] blur-[130px]" />
         <div className="absolute -bottom-24 -right-24 w-[400px] h-[400px] rounded-full bg-[rgba(167,139,250,0.045)] blur-[110px]" />
       </div>
 
       <div className="relative z-10 flex flex-col h-full min-h-0">
-        <RoomHeader roomCode={code} onLeave={handleLeave} />
+        <RoomHeader
+          roomCode={code}
+          onLeave={handleLeave}
+          onDeleteRoom={sendDeleteRoom}
+        />
 
         {/* Connecting / reconnecting banner */}
         <AnimatePresence>
-          {!isConnected && pageState === 'ready' && (
+          {!isConnected && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
@@ -143,7 +150,6 @@ export default function ChatRoom() {
           )}
         </AnimatePresence>
 
-        {/* Chat area */}
         <div className="flex flex-col flex-1 min-h-0">
           <ChatWindow />
           <MessageInput

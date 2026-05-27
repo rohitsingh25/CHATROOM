@@ -1,24 +1,37 @@
 """
 In-memory room manager. No data is persisted to any database.
-Rooms expire after ROOM_INACTIVITY_TIMEOUT seconds of inactivity,
-or immediately when all users disconnect.
+
+Room lifecycle
+--------------
+- Created via REST POST /api/rooms/create/
+- Deleted immediately when the LAST user disconnects
+- Deleted by the creator at any time via WebSocket { type: 'delete_room' }
+- Deleted automatically after ROOM_INACTIVITY_TIMEOUT of inactivity (safety net)
+
+Creator semantics
+-----------------
+The first user to send { type: 'join' } over WebSocket becomes the room creator.
+Creator identity is persisted as creator_username on the Room object.
+If the creator reconnects they are recognised by matching username.
+
+Rejoin deduplication
+--------------------
+prior_members tracks every username that ever joined this room session.
+A returning member does NOT trigger the 'user_join' broadcast again.
 """
 import asyncio
 import uuid
 import logging
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
 ROOM_INACTIVITY_TIMEOUT = 12 * 60 * 60  # 12 hours of inactivity
 MAX_USERS_PER_ROOM = 10
-MAX_MESSAGES_IN_MEMORY = 200           # slightly larger buffer
-CLEANUP_INTERVAL = 5 * 60             # check every 5 minutes
-# Note: rooms are also deleted immediately when the last user disconnects
-# (see RoomManager.remove_user). The 12-hour timer is a safety net for
-# abandoned rooms where the last user's disconnect was never received.
+MAX_MESSAGES_IN_MEMORY = 200
+CLEANUP_INTERVAL = 5 * 60               # check every 5 minutes
 
 
 @dataclass
@@ -38,8 +51,14 @@ class Room:
     code: str
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_active: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    users: Dict[str, str] = field(default_factory=dict)   # channel_name -> username
+    users: Dict[str, str] = field(default_factory=dict)   # channel_name → username
     messages: List[Message] = field(default_factory=list)
+
+    # Creator: first user to join via WebSocket.
+    creator_username: Optional[str] = None
+
+    # All usernames that ever joined this room (used to detect rejoins).
+    prior_members: Set[str] = field(default_factory=set)
 
     def touch(self):
         self.last_active = datetime.now(timezone.utc)
@@ -47,6 +66,8 @@ class Room:
     def is_expired(self) -> bool:
         elapsed = (datetime.now(timezone.utc) - self.last_active).total_seconds()
         return elapsed > ROOM_INACTIVITY_TIMEOUT
+
+    # ── User management ──────────────────────────────────
 
     def add_user(self, channel_name: str, username: str) -> bool:
         if len(self.users) >= MAX_USERS_PER_ROOM:
@@ -60,17 +81,44 @@ class Room:
         self.touch()
         return username
 
-    def add_message(self, message: Message):
-        self.messages.append(message)
-        if len(self.messages) > MAX_MESSAGES_IN_MEMORY:
-            self.messages = self.messages[-MAX_MESSAGES_IN_MEMORY:]
-        self.touch()
-
     def get_online_count(self) -> int:
         return len(self.users)
 
     def get_usernames(self) -> List[str]:
         return list(self.users.values())
+
+    # ── Creator logic ────────────────────────────────────
+
+    def set_creator_if_first(self, username: str) -> bool:
+        """
+        Sets creator_username if none set yet.
+        Returns True if this username IS the creator (new or existing).
+        """
+        if self.creator_username is None:
+            self.creator_username = username
+        return self.creator_username == username
+
+    def is_creator(self, username: str) -> bool:
+        return self.creator_username is not None and self.creator_username == username
+
+    # ── Rejoin tracking ──────────────────────────────────
+
+    def mark_member(self, username: str) -> bool:
+        """
+        Records username as having joined.
+        Returns True if this is a REJOIN (username was already seen before).
+        """
+        is_returning = username in self.prior_members
+        self.prior_members.add(username)
+        return is_returning
+
+    # ── Messages ──────────────────────────────────────────
+
+    def add_message(self, message: Message):
+        self.messages.append(message)
+        if len(self.messages) > MAX_MESSAGES_IN_MEMORY:
+            self.messages = self.messages[-MAX_MESSAGES_IN_MEMORY:]
+        self.touch()
 
 
 class RoomManager:
@@ -87,9 +135,7 @@ class RoomManager:
             cls._instance = inst
         return cls._instance
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+    # ── Lifecycle ─────────────────────────────────────────
 
     async def _ensure_cleanup_running(self):
         if self._cleanup_task is None or self._cleanup_task.done():
@@ -116,9 +162,7 @@ class RoomManager:
         except Exception as exc:
             logger.warning(f"File cleanup failed for room {code}: {exc}")
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    # ── Public API ────────────────────────────────────────
 
     async def create_room(self, code: str) -> Room:
         async with self._lock:
@@ -137,6 +181,7 @@ class RoomManager:
             return code in self._rooms
 
     async def delete_room(self, code: str):
+        """Hard-delete a room and all its files. Called on last-user-leave OR creator delete."""
         async with self._lock:
             self._rooms.pop(code, None)
         await self._delete_room_files(code)

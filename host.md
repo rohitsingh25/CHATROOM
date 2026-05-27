@@ -3,6 +3,15 @@
 > Host the frontend on **Vercel** (free) and the backend on **Render** (free tier).  
 > Total cost: **$0/month** for personal/low-traffic use.
 
+### ✨ Feature Summary
+| Feature | Detail |
+|---------|--------|
+| Room lifecycle | Deleted immediately when last user leaves, or after **12 hours** of inactivity |
+| Creator controls | First user to join is the room creator — can delete the room at any time |
+| Session restore | Page reloads restore your session automatically (same tab) |
+| Active rooms | Homepage shows a live count of active rooms (no codes shown) |
+| File sharing | Images + files with proper download (saves to Downloads folder) |
+
 ---
 
 ## Overview
@@ -60,12 +69,15 @@ Go to → https://render.com and sign up (use GitHub login for easy access).
 In the **Environment** tab, add:
 
 ```
-SECRET_KEY          = <generate a random 50-char string>
-DEBUG               = False
+SECRET_KEY             = <generate a random 50-char string>
+DEBUG                  = False
 DJANGO_SETTINGS_MODULE = chatroom.settings.production
-ALLOWED_HOSTS       = rosychats-backend.onrender.com
-CORS_ALLOWED_ORIGINS = https://rosychats.vercel.app
+ALLOWED_HOSTS          = rosychats-backend.onrender.com
+CORS_ALLOWED_ORIGINS   = https://rosychats.vercel.app
+BACKEND_BASE_URL       = https://rosychats-backend.onrender.com
 ```
+
+> **⚠️ `BACKEND_BASE_URL` is required** — without it, uploaded files will have broken URLs on the Vercel frontend.
 
 > **Generate a secret key:**
 > ```bash
@@ -142,6 +154,20 @@ ALLOWED_HOSTS = ['rosychats-backend.onrender.com']
 2. Create a room in Tab 1 → copy the code
 3. Join in Tab 2 → send messages
 4. Verify real-time updates work in both tabs ✅
+5. Tab 1 (creator) should see a **👑 Creator** badge and a **Delete** button
+6. Delete the room from Tab 1 → Tab 2 should automatically return to the homepage
+7. Check the homepage — active rooms count updates in the top-right badge
+
+### API Endpoints Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/rooms/create/` | POST | Create a new room |
+| `/api/rooms/join/` | POST `{room_code}` | Verify room exists |
+| `/api/rooms/active/` | GET | Returns `{active_rooms: N}` for homepage badge |
+| `/api/upload/` | POST | Upload file to a room |
+| `/api/health/` | GET | Service health check |
+| `/media/temp/{code}/{file}` | GET | Serve uploaded file (with `Content-Disposition: attachment`) |
 
 ---
 
@@ -176,10 +202,15 @@ daphne -b 0.0.0.0 -p $PORT chatroom.asgi:application
 [ ] Code pushed to GitHub
 [ ] Render Web Service created (backend/)
 [ ] Backend env vars set on Render
+    [ ] SECRET_KEY, DEBUG, DJANGO_SETTINGS_MODULE
+    [ ] ALLOWED_HOSTS, CORS_ALLOWED_ORIGINS
+    [ ] BACKEND_BASE_URL  ← required for file uploads to work
 [ ] Vercel project created (frontend/)
 [ ] Frontend env vars set on Vercel (VITE_API_BASE_URL, VITE_WS_BASE_URL)
 [ ] CORS_ALLOWED_ORIGINS on Render updated to Vercel URL
 [ ] Both URLs tested in two browser tabs
+[ ] Creator delete button tested
+[ ] Active rooms badge visible on homepage
 ```
 
 ---
@@ -193,3 +224,6 @@ daphne -b 0.0.0.0 -p $PORT chatroom.asgi:application
 | "Room not found" after backend wakes up | Room was cleared when Render spun down — create a new one |
 | Render build fails | Check `requirements.txt` is in the `backend/` folder |
 | Vercel build fails | Confirm Root Directory is set to `frontend` in project settings |
+| File download opens in new tab | Ensure `BACKEND_BASE_URL` env var is set on Render |
+| Creator badge not showing | Make sure you are the **first** user to join the room via WebSocket |
+| Active rooms badge not loading | Backend may be cold-starting — wait ~30s and refresh |

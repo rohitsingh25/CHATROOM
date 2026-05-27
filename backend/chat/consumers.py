@@ -1,13 +1,25 @@
 """
 WebSocket consumer for the ephemeral chat room.
 
-Message flow
-------------
+Message flow (client → server)
+-------------------------------
 Client connects → sends {"type":"join","username":"..."}
 After join_success, client can send:
   {"type":"chat","content":"..."}
   {"type":"typing","is_typing":true}
   {"type":"file","file_url":"...","file_name":"...","file_type":"..."}
+  {"type":"delete_room"}   ← creator only
+
+Server events (server → client)
+---------------------------------
+  join_success      — sent only to the joining client
+  chat              — broadcast to all except sender (no echo)
+  file              — broadcast to all except sender
+  typing            — broadcast to all except sender
+  user_join         — broadcast to all (first-time join only, not rejoins)
+  user_leave        — broadcast to all
+  room_closed       — broadcast to all when creator deletes or room expires
+  error             — sent only to the requesting client
 """
 import json
 import uuid
@@ -34,10 +46,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.group_name: str = f'chat_{self.room_code}'
         self.username: str | None = None
 
-        # IMPORTANT: In Django Channels, accept() MUST be called before close().
+        # IMPORTANT: accept() MUST come before close() in Django Channels.
         # Calling close() without accept() sends HTTP 403 (rejected upgrade)
-        # instead of a proper WebSocket close frame, causing the browser to
-        # see a failed connection rather than a clean rejection code.
+        # instead of a proper WebSocket close frame.
         await self.accept()
 
         if not validate_room_code(self.room_code):
@@ -46,7 +57,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         if not await room_manager.room_exists(self.room_code):
-            await self._send({'type': 'error', 'message': 'Room not found or expired.'})
+            await self._send({'type': 'room_closed', 'reason': 'expired', 'creator': ''})
             await self.close(code=4004)
             return
 
@@ -98,9 +109,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         handlers = {
-            'chat': self._handle_chat,
-            'typing': self._handle_typing,
-            'file': self._handle_file,
+            'chat':        self._handle_chat,
+            'typing':      self._handle_typing,
+            'file':        self._handle_file,
+            'delete_room': self._handle_delete_room,   # creator only
         }
         handler = handlers.get(msg_type)
         if handler:
@@ -119,6 +131,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self._send_error(err)
             return
 
+        room = await room_manager.get_room(self.room_code)
+        if room is None:
+            await self._send({'type': 'room_closed', 'reason': 'expired', 'creator': ''})
+            await self.close(code=4004)
+            return
+
+        # Determine creator status (first user to join = creator;
+        # if they disconnect and rejoin, username match restores creator role).
+        is_creator = room.set_creator_if_first(username)
+
+        # Track rejoins — prior_members remembers everyone who ever joined.
+        is_returning = room.mark_member(username)
+
         success = await room_manager.add_user(self.room_code, self.channel_name, username)
         if not success:
             await self._send_error('Room is full (max 10 users).')
@@ -128,23 +153,30 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.username = username
         await self.channel_layer.group_add(self.group_name, self.channel_name)
 
-        room = await room_manager.get_room(self.room_code)
-        usernames = room.get_usernames() if room else [username]
+        usernames = room.get_usernames()
 
         await self._send({
-            'type': 'join_success',
-            'username': username,
+            'type':         'join_success',
+            'username':     username,
             'online_count': len(usernames),
             'online_users': usernames,
-            'room_code': self.room_code,
+            'room_code':    self.room_code,
+            'is_creator':   is_creator,      # frontend uses this for delete button
         })
 
-        await self.channel_layer.group_send(self.group_name, {
-            'type': 'evt_user_join',
-            'username': username,
-            'online_count': len(usernames),
-        })
-        logger.info(f"[{self.room_code}] {username} joined (total={len(usernames)})")
+        # Broadcast join event ONLY for first-time joins (not reconnects/rejoins).
+        # This prevents duplicate "X joined the room" system messages.
+        if not is_returning:
+            await self.channel_layer.group_send(self.group_name, {
+                'type':         'evt_user_join',
+                'username':     username,
+                'online_count': len(usernames),
+            })
+
+        logger.info(
+            f"[{self.room_code}] {username} joined "
+            f"(creator={is_creator}, returning={is_returning}, total={len(usernames)})"
+        )
 
     async def _handle_chat(self, data):
         content = (data.get('content') or '').strip()
@@ -163,25 +195,25 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
         await room_manager.add_message(self.room_code, msg)
         await self.channel_layer.group_send(self.group_name, {
-            'type': 'evt_chat',
-            'id': msg.id,
-            'username': msg.username,
-            'content': msg.content,
-            'timestamp': msg.timestamp,
+            'type':         'evt_chat',
+            'id':           msg.id,
+            'username':     msg.username,
+            'content':      msg.content,
+            'timestamp':    msg.timestamp,
             'message_type': 'text',
-            '_sender': self.channel_name,  # skip echoing back to sender
+            '_sender':      self.channel_name,  # skip echo to sender
         })
 
     async def _handle_typing(self, data):
         await self.channel_layer.group_send(self.group_name, {
-            'type': 'evt_typing',
-            'username': self.username,
+            'type':      'evt_typing',
+            'username':  self.username,
             'is_typing': bool(data.get('is_typing', False)),
-            '_sender': self.channel_name,
+            '_sender':   self.channel_name,
         })
 
     async def _handle_file(self, data):
-        file_url = data.get('file_url', '')
+        file_url  = data.get('file_url', '')
         file_name = data.get('file_name', '')
         file_type = data.get('file_type', '')
 
@@ -202,24 +234,49 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
         await room_manager.add_message(self.room_code, msg)
         await self.channel_layer.group_send(self.group_name, {
-            'type': 'evt_file',
-            'id': msg.id,
-            'username': msg.username,
-            'file_url': file_url,
-            'file_name': file_name,
-            'file_type': file_type,
+            'type':         'evt_file',
+            'id':           msg.id,
+            'username':     msg.username,
+            'file_url':     file_url,
+            'file_name':    file_name,
+            'file_type':    file_type,
             'message_type': mtype,
-            'timestamp': msg.timestamp,
-            '_sender': self.channel_name,  # skip echoing back to sender
+            'timestamp':    msg.timestamp,
+            '_sender':      self.channel_name,
         })
+
+    async def _handle_delete_room(self, data):
+        """
+        Creator-only: delete the room immediately.
+        Broadcasts room_closed to every connected client first,
+        then hard-deletes the room and all its files.
+        """
+        room = await room_manager.get_room(self.room_code)
+        if room is None:
+            return  # already gone
+
+        if not room.is_creator(self.username):
+            await self._send_error('Only the room creator can delete the room.')
+            return
+
+        logger.info(f"[{self.room_code}] Creator {self.username} is deleting the room")
+
+        # Notify every connected client BEFORE deleting
+        await self.channel_layer.group_send(self.group_name, {
+            'type':    'evt_room_closed',
+            'reason':  'deleted_by_creator',
+            'creator': self.username,
+        })
+
+        # Now wipe the room (files + memory)
+        await room_manager.delete_room(self.room_code)
 
     # ------------------------------------------------------------------
     # Channel-layer event receivers (server → each client)
     # ------------------------------------------------------------------
 
     async def evt_chat(self, event):
-        # Skip sending back to the original sender — they already see their
-        # own message via optimistic update on the frontend.
+        # Skip echoing back to the original sender (they see it via optimistic update)
         if event.get('_sender') != self.channel_name:
             await self._send({**event, 'type': 'chat'})
 
@@ -230,23 +287,31 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def evt_typing(self, event):
         if event.get('_sender') != self.channel_name:
             await self._send({
-                'type': 'typing',
-                'username': event['username'],
+                'type':      'typing',
+                'username':  event['username'],
                 'is_typing': event['is_typing'],
             })
 
     async def evt_user_join(self, event):
         await self._send({
-            'type': 'user_join',
-            'username': event['username'],
+            'type':         'user_join',
+            'username':     event['username'],
             'online_count': event['online_count'],
         })
 
     async def evt_user_leave(self, event):
         await self._send({
-            'type': 'user_leave',
-            'username': event['username'],
+            'type':         'user_leave',
+            'username':     event['username'],
             'online_count': event['online_count'],
+        })
+
+    async def evt_room_closed(self, event):
+        """Sent to every client when the room is deleted (by creator or expiry)."""
+        await self._send({
+            'type':    'room_closed',
+            'reason':  event.get('reason', 'unknown'),
+            'creator': event.get('creator', ''),
         })
 
     # ------------------------------------------------------------------
