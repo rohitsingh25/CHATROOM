@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: rosychats-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: daphne -b 0.0.0.0 -p $PORT --proxy-headers chatroom.asgi:application
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: chatroom.settings.production
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: rosychats-backend.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://rosychats.vercel.app
+      - key: SECRET_KEY
+        generateValue: true
