@@ -2,7 +2,22 @@ import { useEffect, useRef, useCallback } from 'react'
 import useChatStore from '../store/chatStore'
 import { toast } from 'react-hot-toast'
 
-const WS_BASE = import.meta.env.VITE_WS_BASE_URL || ''
+// Derive WebSocket base URL:
+//   1. Use VITE_WS_BASE_URL if explicitly set (e.g. wss://rosychats-backend.onrender.com)
+//   2. Derive from VITE_API_BASE_URL by swapping http(s): → ws(s): 
+//   3. Fall back to the current browser host (for local dev with Vite proxy)
+function getWsBase() {
+  if (import.meta.env.VITE_WS_BASE_URL) return import.meta.env.VITE_WS_BASE_URL
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL
+      .replace(/^https:\/\//, 'wss://')
+      .replace(/^http:\/\//, 'ws://')
+  }
+  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`
+}
+
+const WS_BASE = getWsBase()
+
 
 export function useWebSocket(roomCode, username) {
   const wsRef = useRef(null)
@@ -23,9 +38,7 @@ export function useWebSocket(roomCode, username) {
     if (!roomCode || !username) return
     setConnecting(true)
 
-    const url = WS_BASE
-      ? `${WS_BASE}/ws/chat/${roomCode}/`
-      : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/chat/${roomCode}/`
+    const url = `${WS_BASE}/ws/chat/${roomCode}/`
 
     const ws = new WebSocket(url)
     wsRef.current = ws
