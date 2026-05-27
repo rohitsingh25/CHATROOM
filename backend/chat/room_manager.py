@@ -213,6 +213,11 @@ class RoomManager:
         async with self._lock:
             return len(self._rooms)
 
+    async def get_all_rooms(self) -> List[Room]:
+        async with self._lock:
+            return list(self._rooms.values())
+
+
 
 # Module-level singleton
 room_manager = RoomManager()

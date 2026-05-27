@@ -4,21 +4,24 @@ A real-time, ephemeral chat application. Create or join temporary rooms — mess
 
 ![Stack](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite-blue?style=flat-square) ![Backend](https://img.shields.io/badge/Backend-Django%204.2%20%2B%20Channels-green?style=flat-square) ![License](https://img.shields.io/badge/license-MIT-purple?style=flat-square)
 
-> Room codes are **4 digits** (e.g. `3721`). Rooms auto-expire after 30 minutes of inactivity.
+> Room codes are **4 digits** (e.g. `3721`). Rooms auto-expire after 12 hours of inactivity.
 
 ---
 
 ## ✨ Features
 
-- 🔐 **Temporary rooms** with unique 6-character codes
+- 🔐 **Temporary rooms** with unique **4-digit** codes (e.g. `3721`)
 - ⚡ **Real-time WebSockets** (Django Channels + ASGI)
 - 💬 **Typing indicators** and online user list
 - 📎 **File & image uploads** (max 10 MB, auto-deleted on room expiry)
 - 😊 **Emoji picker** built-in
 - 🖱️ **Drag-and-drop** file upload
-- 🧹 **Auto-cleanup** — rooms expire after 30 min of inactivity
+- 🧹 **Auto-cleanup** — rooms expire after **12 hours** of inactivity or immediately when the last user leaves
 - 🚫 **No database** — everything in memory
+- 👑 **Creator Controls** — the creator gets a special badge and can delete the room at any time
+- 🛡️ **Admin Portal** — secure admin console (id: `rohit`, pass: `1234`) to watch chats silently and delete any active room
 - 🌙 **Dark glassmorphism UI** with Framer Motion animations
+
 
 ---
 
@@ -109,8 +112,12 @@ npm run dev     # Visit http://localhost:5173
 |--------|----------|-------------|
 | POST | `/api/rooms/create/` | Create room → returns `room_code` |
 | POST | `/api/rooms/join/` | Validate room code |
+| GET | `/api/rooms/active/` | Get anonymized list of active rooms metadata |
 | POST | `/api/upload/` | Upload file (multipart) |
 | GET | `/api/health/` | Health check + active room count |
+| POST | `/api/admin/login/` | Admin authentication login |
+| GET | `/api/admin/rooms/` | List all active rooms (Admin only) |
+| POST | `/api/admin/rooms/` | Force delete/close a room (Admin only) |
 
 ---
 

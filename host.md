@@ -9,8 +9,9 @@
 | Room lifecycle | Deleted immediately when last user leaves, or after **12 hours** of inactivity |
 | Creator controls | First user to join is the room creator — can delete the room at any time |
 | Session restore | Page reloads restore your session automatically (same tab) |
-| Active rooms | Homepage shows a live count of active rooms (no codes shown) |
+| Active rooms | Homepage shows a dropdown list of currently active rooms with user counts (no codes shown) |
 | File sharing | Images + files with proper download (saves to Downloads folder) |
+| Admin Portal | Admin login (id: "rohit", password: "1234") to watch chats silently and force close any room |
 
 ---
 
@@ -164,9 +165,12 @@ ALLOWED_HOSTS = ['rosychats-backend.onrender.com']
 |----------|--------|-------------|
 | `/api/rooms/create/` | POST | Create a new room |
 | `/api/rooms/join/` | POST `{room_code}` | Verify room exists |
-| `/api/rooms/active/` | GET | Returns `{active_rooms: N}` for homepage badge |
+| `/api/rooms/active/` | GET | Returns anonymized list of active rooms metadata |
 | `/api/upload/` | POST | Upload file to a room |
 | `/api/health/` | GET | Service health check |
+| `/api/admin/login/` | POST | Authenticate admin |
+| `/api/admin/rooms/` | GET | List all active rooms with IDs and online users (Admin) |
+| `/api/admin/rooms/` | POST `{room_code}` | Force delete/close a room (Admin) |
 | `/media/temp/{code}/{file}` | GET | Serve uploaded file (with `Content-Disposition: attachment`) |
 
 ---

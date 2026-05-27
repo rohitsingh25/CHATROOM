@@ -69,6 +69,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         await rate_limiter.remove(self.channel_name)
 
+        if getattr(self, 'is_admin', False):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+            logger.info(f"[{self.room_code}] Admin watch connection disconnected")
+            return
+
         username, remaining = await room_manager.remove_user(
             self.room_code, self.channel_name
         )
@@ -125,16 +130,59 @@ class ChatConsumer(AsyncWebsocketConsumer):
     # ------------------------------------------------------------------
 
     async def _handle_join(self, data):
-        username = (data.get('username') or '').strip()
-        ok, err = validate_username(username)
-        if not ok:
-            await self._send_error(err)
-            return
+        is_admin = data.get('is_admin', False)
+        admin_token = data.get('admin_token', '')
 
         room = await room_manager.get_room(self.room_code)
         if room is None:
             await self._send({'type': 'room_closed', 'reason': 'expired', 'creator': ''})
             await self.close(code=4004)
+            return
+
+        # Prepare messages history helper
+        def get_history_data():
+            messages_data = []
+            for msg in room.messages:
+                messages_data.append({
+                    'id': msg.id,
+                    'username': msg.username,
+                    'content': msg.content,
+                    'message_type': msg.message_type,
+                    'timestamp': msg.timestamp,
+                    'file_url': msg.file_url,
+                    'file_name': msg.file_name,
+                    'file_type': msg.file_type,
+                })
+            return messages_data
+
+        if is_admin:
+            if admin_token != "rohit-admin-token-1234":
+                await self._send_error('Invalid admin credentials.')
+                await self.close(code=4001)
+                return
+
+            self.username = "Admin (Spectator)"
+            self.is_admin = True
+            await self.channel_layer.group_add(self.group_name, self.channel_name)
+
+            usernames = room.get_usernames()
+            await self._send({
+                'type':         'join_success',
+                'username':     self.username,
+                'online_count': len(usernames),
+                'online_users': usernames,
+                'room_code':    self.room_code,
+                'is_creator':   False,
+                'is_admin':     True,
+                'messages':     get_history_data(),
+            })
+            logger.info(f"[{self.room_code}] Admin connected in watch mode")
+            return
+
+        username = (data.get('username') or '').strip()
+        ok, err = validate_username(username)
+        if not ok:
+            await self._send_error(err)
             return
 
         # Determine creator status (first user to join = creator;
@@ -162,6 +210,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'online_users': usernames,
             'room_code':    self.room_code,
             'is_creator':   is_creator,      # frontend uses this for delete button
+            'messages':     get_history_data(),
         })
 
         # Broadcast join event ONLY for first-time joins (not reconnects/rejoins).

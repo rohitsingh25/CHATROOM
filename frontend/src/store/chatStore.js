@@ -37,6 +37,8 @@ const useChatStore = create((set) => ({
   addMessage: (msg) =>
     set((state) => ({ messages: [...state.messages, msg] })),
 
+  setMessages: (messages) => set({ messages }),
+
   setOnlineUsers: (users, count) =>
     set({ onlineUsers: users, onlineCount: count }),
 

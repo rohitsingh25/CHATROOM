@@ -5,19 +5,19 @@ import api from '../utils/api'
 
 export default function Home() {
   const navigate = useNavigate()
-  const [activeRooms, setActiveRooms] = useState(null)   // null = loading
+  const [activeRooms, setActiveRooms] = useState([])   // array of rooms
+  const [showRoomsDropdown, setShowRoomsDropdown] = useState(false)
 
-  // Fetch active room count on mount and every 30 seconds
+  // Fetch active rooms on mount and every 30 seconds
   useEffect(() => {
     let cancelled = false
 
     const fetchCount = async () => {
       try {
         const { data } = await api.get('/api/rooms/active/')
-        if (!cancelled) setActiveRooms(data.active_rooms)
+        if (!cancelled) setActiveRooms(data.active_rooms || [])
       } catch {
-        // Backend offline during cold start — just don't show the badge
-        if (!cancelled) setActiveRooms(null)
+        if (!cancelled) setActiveRooms([])
       }
     }
 
@@ -42,28 +42,64 @@ export default function Home() {
         }}
       />
 
-      {/* ── Active rooms badge — top-right ────────────────── */}
+      {/* ── Active rooms badge & Admin Login — top-right ────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5, duration: 0.5 }}
-        className="absolute top-4 right-4 z-20"
+        className="absolute top-4 right-4 z-20 flex items-center gap-2"
       >
-        {activeRooms !== null && (
-          <div className="flex items-center gap-2 glass border border-[var(--border)] rounded-full px-3.5 py-1.5 shadow-md">
+        {/* Admin Login button */}
+        <button
+          id="btn-admin-login"
+          onClick={() => navigate('/admin/login')}
+          title="Admin Login"
+          className="flex items-center justify-center w-8.5 h-8.5 rounded-full border border-[var(--border)] glass hover:border-[var(--accent-2)] hover:text-[var(--accent-2)] transition-colors text-[var(--text-secondary)]"
+          style={{ width: '34px', height: '34px' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </button>
+
+        {/* Active rooms badge */}
+        <div className="relative">
+          <button
+            id="btn-active-rooms-toggle"
+            onClick={() => setShowRoomsDropdown(v => !v)}
+            className="flex items-center gap-2 glass border border-[var(--border)] hover:border-[var(--border-bright)] rounded-full px-3.5 py-1.5 shadow-md transition-colors"
+          >
             {/* Pulsing green dot */}
             <span className="relative flex h-2 w-2 flex-shrink-0">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10b981] opacity-60" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[#10b981]" />
             </span>
             <span className="text-[11px] font-semibold text-[var(--text-secondary)] whitespace-nowrap">
-              {activeRooms === 0
+              {activeRooms.length === 0
                 ? 'No active rooms'
-                : `${activeRooms} active room${activeRooms === 1 ? '' : 's'}`
+                : `${activeRooms.length} active room${activeRooms.length === 1 ? '' : 's'}`
               }
             </span>
-          </div>
-        )}
+          </button>
+
+          {/* Active Rooms Dropdown */}
+          {showRoomsDropdown && activeRooms.length > 0 && (
+            <div className="absolute right-0 top-full mt-2 glass border border-[var(--border-bright)] rounded-xl py-2 px-1 z-50 min-w-[180px] shadow-xl">
+              <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] border-b border-[var(--border)] mb-1">
+                Active Rooms
+              </div>
+              {activeRooms.map(room => (
+                <div key={room.id} className="flex items-center justify-between px-3 py-1.5 rounded-lg hover:bg-[rgba(108,99,255,0.08)] transition-colors">
+                  <span className="text-xs text-[var(--text-primary)] font-semibold">Room #{room.id}</span>
+                  <span className="text-[10px] text-[var(--text-muted)] bg-[rgba(255,255,255,0.05)] border border-[var(--border)] rounded-full px-2 py-0.5">
+                    {room.online_count} online
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </motion.div>
 
       {/* ── Main content ──────────────────────────────────── */}

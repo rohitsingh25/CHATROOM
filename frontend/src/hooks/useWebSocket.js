@@ -42,6 +42,7 @@ export function useWebSocket(roomCode, username, callbacks = {}) {
     setConnecting,
     setCreator,
     addMessage,
+    setMessages,
     setOnlineUsers,
     updateOnlineCount,
     setTyping,
@@ -57,6 +58,9 @@ export function useWebSocket(roomCode, username, callbacks = {}) {
       // Backend tells us if this client is the creator
       if (data.is_creator) {
         setCreator(true)
+      }
+      if (data.messages) {
+        setMessages(data.messages)
       }
 
     } else if (type === 'chat') {
@@ -95,7 +99,7 @@ export function useWebSocket(roomCode, username, callbacks = {}) {
     } else if (type === 'error') {
       toast.error(data.message)
     }
-  }, [setConnected, setCreator, setOnlineUsers, addMessage, setTyping, updateOnlineCount, onRoomClosed])
+  }, [setConnected, setCreator, setOnlineUsers, addMessage, setMessages, setTyping, updateOnlineCount, onRoomClosed])
 
   // ── Connect ──────────────────────────────────────────────
   const connect = useCallback(() => {

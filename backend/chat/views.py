@@ -97,7 +97,83 @@ class HealthView(View):
 
 
 class ActiveRoomsView(View):
-    """Public endpoint — returns live active room count for the homepage badge."""
+    """Public endpoint — returns active rooms with details except their codes for the homepage."""
     def get(self, request):
-        count = async_to_sync(room_manager.active_room_count)()
-        return JsonResponse({'active_rooms': count})
+        rooms = async_to_sync(room_manager.get_all_rooms)()
+        rooms_list = []
+        for idx, room in enumerate(rooms, start=1):
+            rooms_list.append({
+                'id': idx,
+                'online_count': room.get_online_count(),
+                'last_active': room.last_active.isoformat(),
+            })
+        return JsonResponse({'active_rooms': rooms_list})
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminLoginView(View):
+    def post(self, request):
+        body, err = _json_body(request)
+        if err:
+            return JsonResponse({'error': err}, status=400)
+
+        username = (body.get('username') or '').strip()
+        password = (body.get('password') or '').strip()
+
+        if username == 'rohit' and password == '1234':
+            return JsonResponse({
+                'token': 'rohit-admin-token-1234',
+                'message': 'Admin login successful.'
+            })
+        else:
+            return JsonResponse({'error': 'Invalid credentials.'}, status=401)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class AdminRoomsView(View):
+    def get(self, request):
+        auth_header = request.headers.get('Authorization') or ''
+        if not auth_header.startswith('Bearer rohit-admin-token-1234'):
+            return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+        rooms = async_to_sync(room_manager.get_all_rooms)()
+        rooms_data = []
+        for room in rooms:
+            rooms_data.append({
+                'code': room.code,
+                'created_at': room.created_at.isoformat(),
+                'last_active': room.last_active.isoformat(),
+                'users': room.get_usernames(),
+                'messages_count': len(room.messages),
+            })
+        return JsonResponse({'rooms': rooms_data})
+
+    def post(self, request):
+        auth_header = request.headers.get('Authorization') or ''
+        if not auth_header.startswith('Bearer rohit-admin-token-1234'):
+            return JsonResponse({'error': 'Unauthorized'}, status=401)
+
+        body, err = _json_body(request)
+        if err:
+            return JsonResponse({'error': err}, status=400)
+
+        code = (body.get('room_code') or '').strip()
+        if not async_to_sync(room_manager.room_exists)(code):
+            return JsonResponse({'error': 'Room not found.'}, status=404)
+
+        # Notify WebSocket clients in group
+        from channels.layers import get_channel_layer
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"chat_{code}",
+            {
+                'type': 'evt_room_closed',
+                'reason': 'deleted_by_admin',
+                'creator': 'admin'
+            }
+        )
+
+        async_to_sync(room_manager.delete_room)(code)
+        logger.info(f"REST Admin: deleted room {code}")
+        return JsonResponse({'message': 'Room successfully closed by admin.'})
+
