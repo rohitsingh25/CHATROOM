@@ -12,10 +12,13 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-ROOM_INACTIVITY_TIMEOUT = 30 * 60   # 30 minutes
+ROOM_INACTIVITY_TIMEOUT = 12 * 60 * 60  # 12 hours of inactivity
 MAX_USERS_PER_ROOM = 10
-MAX_MESSAGES_IN_MEMORY = 100
-CLEANUP_INTERVAL = 60                # seconds between cleanup sweeps
+MAX_MESSAGES_IN_MEMORY = 200           # slightly larger buffer
+CLEANUP_INTERVAL = 5 * 60             # check every 5 minutes
+# Note: rooms are also deleted immediately when the last user disconnects
+# (see RoomManager.remove_user). The 12-hour timer is a safety net for
+# abandoned rooms where the last user's disconnect was never received.
 
 
 @dataclass

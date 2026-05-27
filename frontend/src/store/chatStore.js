@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { saveSession, clearSession } from '../utils/session'
 
 const useChatStore = create((set, get) => ({
   // Room
@@ -17,7 +18,11 @@ const useChatStore = create((set, get) => ({
   connectionError: null,
 
   // Actions
-  setRoom: (roomCode, username) => set({ roomCode, username }),
+  setRoom: (roomCode, username) => {
+    // Persist to sessionStorage so page reloads restore the session
+    saveSession(roomCode, username)
+    set({ roomCode, username })
+  },
 
   setConnected: (val) => set({ isConnected: val, isConnecting: false }),
   setConnecting: (val) => set({ isConnecting: val }),
@@ -44,7 +49,9 @@ const useChatStore = create((set, get) => ({
       return { typingUsers: isTyping ? [...without, username] : without }
     }),
 
-  clearRoom: () =>
+  clearRoom: () => {
+    // Clear persisted session so a fresh start doesn't re-enter the old room
+    clearSession()
     set({
       roomCode: null,
       username: null,
@@ -55,7 +62,8 @@ const useChatStore = create((set, get) => ({
       isConnected: false,
       isConnecting: false,
       connectionError: null,
-    }),
+    })
+  },
 }))
 
 export default useChatStore

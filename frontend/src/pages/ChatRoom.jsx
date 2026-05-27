@@ -1,32 +1,119 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import useChatStore from '../store/chatStore'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { loadSession } from '../utils/session'
+import api from '../utils/api'
 import RoomHeader from '../components/Room/RoomHeader'
 import ChatWindow from '../components/Chat/ChatWindow'
 import MessageInput from '../components/Chat/MessageInput'
+import RoomExpired from './RoomExpired'
+import NotFound from './NotFound'
 import { Toaster } from 'react-hot-toast'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export default function ChatRoom() {
   const { code } = useParams()
   const navigate = useNavigate()
-  const { username, isConnected, isConnecting, clearRoom } = useChatStore()
+  const { username, isConnected, isConnecting, setRoom, clearRoom } = useChatStore()
 
-  // If user refreshed or navigated directly, redirect to join with prefilled code
+  // 'checking' | 'joining' | 'ready' | 'expired' | 'error'
+  const [pageState, setPageState] = useState('checking')
+
   useEffect(() => {
-    if (!username) {
-      navigate(`/join?code=${code}`, { replace: true })
-    }
-  }, []) // eslint-disable-line
+    let cancelled = false
 
-  const { sendChat, sendTyping, sendFile } = useWebSocket(code, username)
+    async function init() {
+      // 1. If username already set in store (normal navigation), verify room exists
+      if (username) {
+        try {
+          await api.post('/api/rooms/join/', { room_code: code })
+          if (!cancelled) setPageState('ready')
+        } catch (err) {
+          if (!cancelled) {
+            setPageState(err.response?.status === 404 ? 'expired' : 'error')
+          }
+        }
+        return
+      }
+
+      // 2. Try to restore session from sessionStorage (page reload case)
+      const saved = loadSession()
+      if (saved && saved.roomCode === code) {
+        // Verify the room still exists on the backend before restoring
+        try {
+          await api.post('/api/rooms/join/', { room_code: code })
+          if (!cancelled) {
+            setRoom(code, saved.username)
+            setPageState('ready')
+          }
+        } catch (err) {
+          if (!cancelled) {
+            clearRoom()
+            setPageState(err.response?.status === 404 ? 'expired' : 'error')
+          }
+        }
+        return
+      }
+
+      // 3. No session — redirect to Join page with code pre-filled
+      if (!cancelled) {
+        navigate(`/join?code=${code}`, { replace: true })
+      }
+    }
+
+    init()
+    return () => { cancelled = true }
+  }, [code]) // eslint-disable-line
+
+  const { sendChat, sendTyping, sendFile } = useWebSocket(
+    pageState === 'ready' ? code : null,
+    username
+  )
 
   const handleLeave = () => {
     clearRoom()
     navigate('/')
   }
 
+  // ── Dead-end screens ──
+  if (pageState === 'expired') {
+    return <RoomExpired roomCode={code} />
+  }
+
+  if (pageState === 'error') {
+    return (
+      <NotFound
+        message="Something went wrong connecting to this room. Please try again."
+        showJoin
+      />
+    )
+  }
+
+  // ── Loading / checking state ──
+  if (pageState === 'checking' || pageState === 'joining') {
+    return (
+      <div className="full-height relative flex items-center justify-center overflow-hidden">
+        <div className="orb orb-1" />
+        <div className="orb orb-2" />
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="relative z-10 flex flex-col items-center gap-6"
+        >
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#6c63ff] to-[#9b87f5] flex items-center justify-center shadow-[0_0_40px_rgba(108,99,255,0.4)]">
+            <div className="w-6 h-6 border-[2.5px] border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+          <div className="text-center">
+            <p className="text-[var(--text-primary)] font-semibold text-sm">Connecting to room</p>
+            <p className="text-[var(--text-muted)] text-xs mt-1 font-mono tracking-widest">{code}</p>
+          </div>
+        </motion.div>
+      </div>
+    )
+  }
+
+  // ── Main chat view ──
   return (
     <div className="full-height flex flex-col bg-[var(--bg-primary)] overflow-hidden relative">
       {/* Ambient background */}
@@ -40,7 +127,7 @@ export default function ChatRoom() {
 
         {/* Connecting / reconnecting banner */}
         <AnimatePresence>
-          {!isConnected && (
+          {!isConnected && pageState === 'ready' && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
@@ -56,7 +143,7 @@ export default function ChatRoom() {
           )}
         </AnimatePresence>
 
-        {/* Chat area — flex-1 + min-h-0 to prevent overflow pushing input off screen */}
+        {/* Chat area */}
         <div className="flex flex-col flex-1 min-h-0">
           <ChatWindow />
           <MessageInput
