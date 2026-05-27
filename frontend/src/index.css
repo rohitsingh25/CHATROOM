@@ -149,18 +149,18 @@ html, body, #root {
   background: var(--msg-own-bg);
   border-radius: 18px 18px 4px 18px;
   color: white;
-  /* Prevent text overflow */
   word-break: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 .msg-other {
   background: var(--msg-other-bg);
   border: 1px solid var(--border);
   border-radius: 18px 18px 18px 4px;
   color: var(--text-primary);
-  /* Prevent text overflow */
   word-break: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 /* ===== Typing dots ===== */
