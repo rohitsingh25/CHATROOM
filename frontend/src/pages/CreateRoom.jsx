@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import api from '../utils/api'
 import { toast } from 'react-hot-toast'
 import useChatStore from '../store/chatStore'
 
@@ -18,7 +18,7 @@ export default function CreateRoom() {
     if (username.trim().length < 2) { toast.error('Name must be at least 2 characters.'); return }
     setLoading(true)
     try {
-      const { data } = await axios.post('/api/rooms/create/')
+      const { data } = await api.post('/api/rooms/create/')
       setRoomCode(data.room_code)
     } catch {
       toast.error('Could not create room. Try again.')

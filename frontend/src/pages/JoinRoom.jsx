@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import axios from 'axios'
+import api from '../utils/api'
 import { toast } from 'react-hot-toast'
 import useChatStore from '../store/chatStore'
 
@@ -50,7 +50,7 @@ export default function JoinRoom() {
 
     setLoading(true)
     try {
-      await axios.post('/api/rooms/join/', { room_code: roomCode })
+      await api.post('/api/rooms/join/', { room_code: roomCode })
       setRoom(roomCode, username.trim())
       navigate(`/room/${roomCode}`)
     } catch (err) {

@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useDropzone } from 'react-dropzone'
 import EmojiPicker from 'emoji-picker-react'
-import axios from 'axios'
+import api from '../../utils/api'
 import { toast } from 'react-hot-toast'
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -65,7 +65,7 @@ export default function MessageInput({ onSendChat, onSendTyping, onSendFile, roo
       const form = new FormData()
       form.append('file', file)
       form.append('room_code', roomCode)
-      const { data } = await axios.post('/api/upload/', form)
+      const { data } = await api.post('/api/upload/', form)
       onSendFile({ file_url: data.file_url, file_name: data.file_name, file_type: data.file_type })
       toast.success('File uploaded!')
     } catch (err) {
