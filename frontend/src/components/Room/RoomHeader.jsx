@@ -117,13 +117,24 @@ export default function RoomHeader({ roomCode, onLeave }) {
           </AnimatePresence>
         </div>
 
-        <button
+        <motion.button
           id="btn-leave-room"
           onClick={onLeave}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[var(--danger)] border border-[rgba(239,68,68,0.25)] hover:bg-[rgba(239,68,68,0.1)] hover:border-[rgba(239,68,68,0.45)] transition-all whitespace-nowrap"
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.95 }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
+            text-[var(--danger)] border border-[rgba(239,68,68,0.25)]
+            hover:bg-[rgba(239,68,68,0.12)] hover:border-[rgba(239,68,68,0.5)]
+            hover:shadow-[0_0_14px_rgba(239,68,68,0.2)]
+            transition-all duration-200 whitespace-nowrap"
         >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
           Leave
-        </button>
+        </motion.button>
       </div>
     </motion.header>
   )
